@@ -121,7 +121,7 @@
                             </div>
                             <!-- Currency -->
                             <field name="l10n_hu_company_currency_name" invisible="1"/>
-                            <field name="l10n_hu_huf_rate" invisible="l10n_hu_company_currency_name == 'HUF'"/>
+                            <field name="l10n_hu_huf_rate" invisible="l10n_hu_company_currency_name == 'HUF'" readonly="state != 'draft'"/>
                             <div name="l10n_hu_currency_actions" colspan="2" invisible="l10n_hu_banner_enabled or (l10n_hu_company_currency_name == 'HUF' and l10n_hu_currency_name == 'HUF')">
                                 <button name="action_l10n_hu_view_currency_rates" class="btn-secondary m-1" groups="l10n_hu_plus.user_group" icon="fa-area-chart" string="Currency Rates" type="object"/>
                             </div>

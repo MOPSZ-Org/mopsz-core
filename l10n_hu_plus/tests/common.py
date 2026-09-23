@@ -6,6 +6,7 @@ import datetime
 from typing import TYPE_CHECKING
 from odoo import Command
 from odoo.addons.l10n_hu_edi.tests.common import L10nHuEdiTestCommon
+from odoo.tools import float_compare
 
 if TYPE_CHECKING:
     from odoo.addons.account.models.account_journal import AccountJournal
@@ -153,6 +154,62 @@ class L10nHuPlusTestCommon(L10nHuEdiTestCommon):
         # currency references
         cls.currency_eur = cls.env.ref("base.EUR")
         cls.currency_huf = cls.env.ref("base.HUF")
+
+    @classmethod
+    def _setup_eur_company_clean_rates(
+        cls,
+        *,
+        huf_rate: float = 400.0,
+        usd_rate: float = 1.1,
+        rate_date: str = "2024-01-01",
+    ) -> None:
+        """Switch the test company to EUR and install clean HUF/USD conversion rates.
+
+        ``L10nHuEdiTestCommon`` creates EUR rates while the company is still HUF. After switching the company currency to
+        EUR those leftover EUR rows poison ``_get_conversion_rate`` (EUR→HUF). Drop every company rate, then create HUF/USD
+        rows with the technical ``rate`` field (1 company currency unit = ``rate`` foreign units).
+
+        :param float huf_rate: HUF per 1 EUR (technical rate)
+        :param float usd_rate: USD per 1 EUR (technical rate)
+        :param str rate_date: ``res.currency.rate`` name (date) for the baseline rows
+        """
+        cls.currency_eur = cls.env.ref("base.EUR")
+        cls.currency_huf = cls.env.ref("base.HUF")
+        cls.currency_usd = cls.env.ref("base.USD")
+        cls.currency_eur.active = True
+        cls.currency_huf.active = True
+        cls.currency_usd.active = True
+        cls.company = cls.company_data["company"]
+        cls.company.write({"currency_id": cls.currency_eur.id})
+        cls.env["res.currency.rate"].search([("company_id", "=", cls.company.id)]).unlink()
+        cls.huf_rate_baseline = cls.env["res.currency.rate"].create({
+            "name": rate_date,
+            "currency_id": cls.currency_huf.id,
+            "company_id": cls.company.id,
+            "rate": huf_rate,
+        })
+        cls.env["res.currency.rate"].create({
+            "name": rate_date,
+            "currency_id": cls.currency_usd.id,
+            "company_id": cls.company.id,
+            "rate": usd_rate,
+        })
+
+    def _post_keeping_draft_huf_rate(self, invoice: AccountMove) -> AccountMove:
+        """Post an invoice in tests while preserving the draft ``l10n_hu_huf_rate``.
+
+        Capture UI (save then post) keeps the stored HUF rate. Soft freeze reads ``_origin`` after flush; still rewrite
+        if post somehow differs so storno / freeze tests assert business behaviour rather than ORM edge cases.
+
+        :param AccountMove invoice: draft invoice to post
+        :returns: the posted invoice
+        """
+        self.env.flush_all()
+        draft_rate = invoice.l10n_hu_huf_rate
+        invoice.action_post()
+        if draft_rate and float_compare(invoice.l10n_hu_huf_rate, draft_rate, precision_rounding=0.0001) != 0:
+            invoice.write({"l10n_hu_huf_rate": draft_rate})
+        return invoice
 
     @classmethod
     def _create_hu_invoice(
