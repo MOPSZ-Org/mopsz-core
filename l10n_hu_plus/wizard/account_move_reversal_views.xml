@@ -7,6 +7,10 @@
         <field name="model">account.move.reversal</field>
         <field name="priority">36</field>
         <field name="arch" type="xml">
+            <!-- Hide Reverse Date; keep background default (today) for accounting date -->
+            <xpath expr="//field[@name='date']" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </xpath>
             <!-- Add fields -->
             <xpath expr="//field[@name='date']" position="after">
                 <field name="l10n_hu_storno_visible" invisible="1"/>

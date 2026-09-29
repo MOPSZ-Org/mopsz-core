@@ -5,6 +5,7 @@ import base64
 import copy
 import datetime
 import json
+from lxml import etree
 
 # 2 : imports of odoo
 from odoo import _, api, exceptions, fields, models, tools  # alphabetically ordered
@@ -52,7 +53,10 @@ class L10nHuPlusAccountMove(models.Model):
         string="HUF Currency",
     )
     l10n_hu_huf_rate = fields.Float(
-        compute='_compute_l10n_hu_currency',
+        compute='_compute_l10n_hu_huf_rate',
+        store=True,
+        readonly=False,
+        copy=False,
         string="HUF Rate",
     )
     l10n_hu_invoice_currency_rate_date = fields.Date(
@@ -251,8 +255,57 @@ class L10nHuPlusAccountMove(models.Model):
             rate_data = record.l10n_hu_plus_get_rate_data({})
             record.l10n_hu_invoice_currency_rate_date = rate_data.get('l10n_hu_invoice_currency_rate_date', None)
             record.l10n_hu_huf_currency = rate_data.get('l10n_hu_huf_currency', None)
-            record.l10n_hu_huf_rate = rate_data.get('l10n_hu_huf_rate', 0.0)
             record.l10n_hu_invoice_currency_rate_inverse = rate_data.get('l10n_hu_invoice_currency_rate_inverse', None)
+
+    @api.depends(
+        "currency_id",
+        "invoice_date",
+        "delivery_date",
+        "state",
+        "reversed_entry_id",
+        "reversed_entry_id.delivery_date",
+        "reversed_entry_id.l10n_hu_huf_rate",
+        "l10n_hu_document_type_technical_name",
+    )
+    def _compute_l10n_hu_huf_rate(self):
+        """Compute and store invoice→HUF rate; freeze after posting.
+
+        Draft invoices refresh from ``l10n_hu_plus_get_rate_data`` when currency or document dates change. Posted and cancelled
+        moves keep the DB value via ``_origin`` so later rate-table or date-driven recomputes cannot change the document HUF rate;
+        if that value is empty (invalidated cache on post, or pre-store upgrade), compute once from the live table then freeze on
+        later runs. When the reversal wizard sets ``l10n_hu_storno_original_huf_rates`` (non-HUF company HU storno), create-time
+        compute takes the original invoice's stored rate instead of the live table — same pattern as ``l10n_hu_oerp`` for
+        ``invoice_currency_rate``. Draft modification invoices (``invoice_modification``) reuse the original stored HUF rate while
+        ``delivery_date`` matches the original invoice; any other delivery date falls through to the live table path.
+        """
+        storno_huf_rates = self.env.context.get("l10n_hu_storno_original_huf_rates")
+        for record in self:
+            # create-time HU storno: keep original stored invoice→HUF rate (wizard context)
+            if storno_huf_rates and record.reversed_entry_id.id in storno_huf_rates:
+                record.l10n_hu_huf_rate = storno_huf_rates[record.reversed_entry_id.id]
+                continue
+            if record.state != "draft":
+                # freeze from DB (_origin); avoid x=x which can persist 0 after cache invalidation on post/cancel
+                frozen_rate = record._origin.l10n_hu_huf_rate
+                if frozen_rate:
+                    record.l10n_hu_huf_rate = frozen_rate
+                else:
+                    rate_data = record.l10n_hu_plus_get_rate_data({})
+                    record.l10n_hu_huf_rate = rate_data.get("l10n_hu_huf_rate", 0.0)
+                continue
+            # modification: same delivery date as original → reuse original stored HUF rate
+            original = record.reversed_entry_id
+            if (
+                record.l10n_hu_document_type_technical_name == "invoice_modification"
+                and original
+                and record.delivery_date
+                and record.delivery_date == original.delivery_date
+                and original.l10n_hu_huf_rate
+            ):
+                record.l10n_hu_huf_rate = original.l10n_hu_huf_rate
+                continue
+            rate_data = record.l10n_hu_plus_get_rate_data({})
+            record.l10n_hu_huf_rate = rate_data.get("l10n_hu_huf_rate", 0.0)
 
     def _compute_l10n_hu_delivery_period_text(self):
         for record in self:
@@ -264,7 +317,7 @@ class L10nHuPlusAccountMove(models.Model):
                     period_summary = delivery_result['period_summary']
             record.l10n_hu_delivery_period_summary = period_summary
 
-    @api.depends('amount_untaxed', 'amount_tax', 'currency_id', 'l10n_hu_document_vat_huf')
+    @api.depends('amount_untaxed', 'amount_tax', 'currency_id', 'l10n_hu_document_vat_huf', 'l10n_hu_huf_rate')
     def _compute_l10n_hu_document(self):
         for record in self:
             data_result = record.l10n_hu_plus_get_document_data({})
@@ -577,31 +630,143 @@ class L10nHuPlusAccountMove(models.Model):
     # Business methods
     ## SUPER
     def _l10n_hu_get_currency_rate(self):
-        """Override: use manually modified invoice currency rate for NAV XML.
+        """Override: prefer stored HU+ HUF rate / manual invoice rate for NAV and document HUF.
 
         :return: currency conversion rate (invoice_ccy → HUF)
         :rtype: float
 
-        The original l10n_hu_edi method always reads from the res.currency.rate table, ignoring manual rate changes on the invoice.  When
-        the user has manually modified invoice_currency_rate (i.e. it differs from expected_currency_rate), the NAV XML must reflect the
-        actual rate.
-
-        Guards:
-        - is_invoice: payment moves have no computed invoice_currency_rate
-        - company_currency == HUF: for non-HUF companies 1/invoice_currency_rate
-          gives invoice_ccy→company_ccy, NOT invoice_ccy→HUF
-        - currency != company_currency: HUF→HUF needs no rate
-        - invoice_currency_rate > 0: safety against division by zero
-        - invoice_currency_rate != expected_currency_rate: only override when
-          manually changed
+        Priority:
+        1. Non-HUF company, HU fiscal, posted/cancel with stored ``l10n_hu_huf_rate`` — document rate frozen at post
+           (draft must keep calling ``super()`` so ``_compute_l10n_hu_huf_rate`` can still refresh from the live table).
+        2. HUF company with manually overridden ``invoice_currency_rate`` — ``1 / invoice_currency_rate``.
+        3. Otherwise live ``res.currency.rate`` via ``l10n_hu_edi``.
         """
+        self.ensure_one()
+        currency_huf = self.env.ref("base.HUF")
+        # posted/cancel non-HUF company: NAV XML and callers must use the frozen HU+ HUF Rate
+        if (self.company_id.account_fiscal_country_id.code == "HU"
+                and self.company_id.currency_id != currency_huf
+                and self.state != "draft"
+                and self.l10n_hu_huf_rate):
+            if self.currency_id == currency_huf:
+                return 1.0
+            return self.l10n_hu_huf_rate
+        # HUF company: honour a manual invoice_currency_rate override
         if (self.is_invoice(include_receipts=True)
-                and self.company_id.currency_id == self.env.ref("base.HUF")
+                and self.company_id.currency_id == currency_huf
                 and self.currency_id != self.company_id.currency_id
                 and self.invoice_currency_rate
                 and self.invoice_currency_rate != self.expected_currency_rate):
             return 1 / self.invoice_currency_rate
         return super()._l10n_hu_get_currency_rate()
+
+    @api.model
+    def _l10n_hu_migrate_huf_rates(self) -> int:
+        """Backfill stored ``l10n_hu_huf_rate`` on posted/cancelled non-HUF company HU invoices.
+
+        Search scope matches ``_l10n_hu_is_huf_rate_migration_candidate``. Process moves without
+        ``reversed_entry_id`` first, then reversals, so storno / same-date modification fallbacks can read an already
+        migrated original. Write the rate directly; do not rely on the posted freeze compute for empty fields.
+
+        :returns: number of moves updated
+        """
+        currency_huf = self.env.ref("base.HUF")
+        domain = [
+            ("company_id.account_fiscal_country_id.code", "=", "HU"),
+            ("company_id.currency_id", "!=", currency_huf.id),
+            ("state", "in", ("posted", "cancel")),
+            ("move_type", "in", self.get_invoice_types(include_receipts=True)),
+            ("l10n_hu_huf_rate", "in", (False, 0, 0.0)),
+        ]
+        updated_count = 0
+        # normals first, then storno / modification so original.l10n_hu_huf_rate is already filled when needed
+        for reversed_entry_domain in (
+            [("reversed_entry_id", "=", False)],
+            [("reversed_entry_id", "!=", False)],
+        ):
+            moves = self.search(domain + reversed_entry_domain)
+            for move in moves:
+                rate = move._l10n_hu_get_migrated_huf_rate()
+                if not rate:
+                    continue
+                move.write({"l10n_hu_huf_rate": rate})
+                updated_count += 1
+        return updated_count
+
+    def _l10n_hu_get_migrated_huf_rate(self) -> float:
+        """Resolve one move's HUF rate for migration.
+
+        Out-of-scope moves return 0.0. Invoice currency HUF returns 1.0. Otherwise prefer NAV XML
+        ``exchangeRate``; then original invoice rate for storno or same-date modification; then live
+        ``l10n_hu_plus_get_rate_data``.
+
+        :returns: HUF rate to store, or 0.0 when none could be resolved
+        """
+        self.ensure_one()
+        if not self._l10n_hu_is_huf_rate_migration_candidate():
+            return 0.0
+        currency_huf = self.env.ref("base.HUF")
+        if self.currency_id == currency_huf:
+            return 1.0
+        xml_rate = self._l10n_hu_get_huf_rate_from_nav_xml()
+        if xml_rate:
+            return xml_rate
+        original = self.reversed_entry_id
+        technical_name = self.l10n_hu_document_type_technical_name
+        if technical_name == "invoice_storno" and original and original.l10n_hu_huf_rate:
+            return original.l10n_hu_huf_rate
+        if (
+            technical_name == "invoice_modification"
+            and original
+            and self.delivery_date
+            and self.delivery_date == original.delivery_date
+            and original.l10n_hu_huf_rate
+        ):
+            return original.l10n_hu_huf_rate
+        rate_data = self.l10n_hu_plus_get_rate_data({})
+        return rate_data.get("l10n_hu_huf_rate", 0.0) or 0.0
+
+    def _l10n_hu_is_huf_rate_migration_candidate(self) -> bool:
+        """Return whether this move is in scope for stored HUF rate backfill.
+
+        Scope: Hungarian fiscal company with non-HUF currency, posted or cancelled invoice/receipt, empty stored
+        ``l10n_hu_huf_rate``. Draft and HUF-company moves are excluded.
+
+        :returns: True when the move should receive a migrated HUF rate
+        """
+        self.ensure_one()
+        currency_huf = self.env.ref("base.HUF")
+        if self.company_id.account_fiscal_country_id.code != "HU":
+            return False
+        if self.company_id.currency_id == currency_huf:
+            return False
+        if self.state not in ("posted", "cancel"):
+            return False
+        if not self.is_invoice(include_receipts=True):
+            return False
+        if self.l10n_hu_huf_rate:
+            return False
+        return True
+
+    def _l10n_hu_get_huf_rate_from_nav_xml(self) -> float:
+        """Read ``exchangeRate`` from the stored NAV EDI XML attachment.
+
+        :returns: exchange rate from XML, or 0.0 when missing or unreadable
+        """
+        self.ensure_one()
+        if not self.l10n_hu_edi_attachment:
+            return 0.0
+        try:
+            root = etree.fromstring(base64.b64decode(self.l10n_hu_edi_attachment))
+        except (etree.XMLSyntaxError, ValueError, TypeError):
+            return 0.0
+        nodes = root.xpath("//*[local-name()='exchangeRate']")
+        if not nodes or not (nodes[0].text or "").strip():
+            return 0.0
+        try:
+            return float(nodes[0].text.strip())
+        except ValueError:
+            return 0.0
 
     def _get_invoice_currency_rate_date(self):
         self.ensure_one()
@@ -1085,12 +1250,23 @@ class L10nHuPlusAccountMove(models.Model):
             })
 
             # RATE
+            # modification with same delivery date: keep original stored HUF rate (do not overwrite from live table)
+            huf_rate = rate_data.get("l10n_hu_huf_rate", 0.0)
+            original = self.reversed_entry_id
+            if (
+                self.l10n_hu_document_type_technical_name == "invoice_modification"
+                and original
+                and self.delivery_date
+                and self.delivery_date == original.delivery_date
+                and original.l10n_hu_huf_rate
+            ):
+                huf_rate = original.l10n_hu_huf_rate
             field_values.update({
-                'l10n_hu_huf_currency': rate_data.get('l10n_hu_huf_currency'),
-                'l10n_hu_document_rate': rate_data.get('l10n_hu_document_rate', 0.0),
-                'l10n_hu_huf_rate': rate_data.get('l10n_hu_huf_rate', 0.0),
-                'l10n_hu_invoice_currency_rate_date': rate_data.get('l10n_hu_invoice_currency_rate_date'),
-                'l10n_hu_invoice_currency_rate_inverse': rate_data.get('l10n_hu_invoice_currency_rate_inverse', 0.0),
+                "l10n_hu_huf_currency": rate_data.get("l10n_hu_huf_currency"),
+                "l10n_hu_document_rate": rate_data.get("l10n_hu_document_rate", 0.0),
+                "l10n_hu_huf_rate": huf_rate,
+                "l10n_hu_invoice_currency_rate_date": rate_data.get("l10n_hu_invoice_currency_rate_date"),
+                "l10n_hu_invoice_currency_rate_inverse": rate_data.get("l10n_hu_invoice_currency_rate_inverse", 0.0),
             })
             # Only update invoice currency rate if delivery date has changed
             if delivery_date_update:
@@ -1358,13 +1534,13 @@ class L10nHuPlusAccountMove(models.Model):
                     and self.invoice_currency_rate != 0):
                 l10n_hu_document_rate = 1 / self.invoice_currency_rate
                 l10n_hu_document_vat_huf = huf_currency.round(self.amount_tax * l10n_hu_document_rate * amount_sign)
-            # HUF invoice and NOT HUF accounting
+            # HUF invoice and NOT HUF accounting: use stored HU+ HUF Rate when set
             elif self.currency_id.name == 'HUF' and self.company_id.currency_id.name != 'HUF':
-                l10n_hu_document_rate = self._l10n_hu_get_currency_rate()
+                l10n_hu_document_rate = self.l10n_hu_huf_rate or self._l10n_hu_get_currency_rate()
                 l10n_hu_document_vat_huf = huf_currency.round(self.amount_tax * l10n_hu_document_rate * amount_sign)
-            # NOT HUF invoice and NOT HUF accounting
+            # NOT HUF invoice and NOT HUF accounting: Document HUF follows stored HU+ HUF Rate
             elif self.currency_id.name != 'HUF' and self.company_id.currency_id.name != 'HUF':
-                l10n_hu_document_rate = self._l10n_hu_get_currency_rate()
+                l10n_hu_document_rate = self.l10n_hu_huf_rate or self._l10n_hu_get_currency_rate()
                 l10n_hu_document_vat_huf = huf_currency.round(self.amount_tax * l10n_hu_document_rate * amount_sign)
             else:
                 pass
