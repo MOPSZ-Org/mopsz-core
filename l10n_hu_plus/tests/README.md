@@ -12,10 +12,11 @@
 | `test_huf_rate_store.py` | 1 | 6 | Stored HUF Rate freeze (draft/post/cancel, Document HUF, NAV helper) |
 | `test_storno_huf_rate.py` | 1 | 8 | Stornó / módosító HUF Rate + Reverse Date invisible |
 | `test_huf_rate_migrate.py` | 1 | 6 | HUF Rate backfill migráció (XML, tábla, stornó, módosító, scope) |
+| `test_huf_rate_zde.py` | 1 | 4 | ZDE guard: üres `invoice_currency_rate` / non-invoice compute skip |
 | `test_invoice_currency_rate.py` | 1 | 2 | Invoice currency rate / delivery date |
 | `test_nav_invoice_summary.py` | 1 | 5 | NAV invoice summary / exchangeRate konzisztencia |
 | `test_final_invoice_huf_zero_clamp.py` | 1 | 4 | Document HUF zero-clamp végszámlán |
-| **Összesen** | **33** | **188** | |
+| **Összesen** | **34** | **192** | |
 
 ## Tag-ek
 
@@ -62,7 +63,7 @@ Az összes példa az Odoo gyökérkönyvtárából indítandó.
     -d mopsz_test \
     -i l10n_hu_plus \
     --test-enable \
-    --test-tags l10n_hu_plus.TestAccountMoveComputedFields \
+    --test-tags=/l10n_hu_plus:TestAccountMoveComputedFields \
     --stop-after-init
 ```
 
@@ -145,13 +146,14 @@ Az összes példa az Odoo gyökérkönyvtárából indítandó.
 | `TestUomUom` | Mértékegység HU+ mezők |
 | `TestAccountTag` | Account tag HU+ mezők |
 
-### test_huf_rate_store.py / test_storno_huf_rate.py / test_huf_rate_migrate.py
+### test_huf_rate_store.py / test_storno_huf_rate.py / test_huf_rate_migrate.py / test_huf_rate_zde.py
 
 | Osztály | Tesztelt terület |
 |---|---|
 | `TestHufRateStore` | Draft refresh, posted/cancel freeze, Document HUF, NAV currency rate |
 | `TestStornoHufRate` | Stornó / módosító rate öröklés, delivery_date váltás, Reverse Date invisible |
 | `TestHufRateMigrate` | `_l10n_hu_migrate_huf_rates` (XML, tábla, stornó, módosító, draft/HUF cég skip) |
+| `TestHufRateZde` | Üres `invoice_currency_rate` guard (`_l10n_hu_get_currency_rate`); non-invoice compute skip; számla regresszió |
 
 **Csak HUF Rate regresszió futtatása:**
 
@@ -161,6 +163,6 @@ Az összes példa az Odoo gyökérkönyvtárából indítandó.
     -d mopsz_test \
     -u l10n_hu_plus \
     --test-enable \
-    --test-tags l10n_hu_plus.TestHufRateStore,l10n_hu_plus.TestStornoHufRate,l10n_hu_plus.TestHufRateMigrate \
+    --test-tags=/l10n_hu_plus:TestHufRateStore,/l10n_hu_plus:TestStornoHufRate,/l10n_hu_plus:TestHufRateMigrate,/l10n_hu_plus:TestHufRateZde \
     --stop-after-init
 ```
