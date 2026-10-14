@@ -235,14 +235,45 @@ class L10nHuPlusAccountMove(models.Model):
                 move.show_delivery_date = True
 
     ## HU+
-    @api.depends('currency_id', 'invoice_date', 'delivery_date')
+    @api.depends(
+        'currency_id',
+        'invoice_date',
+        'delivery_date',
+        'company_id',
+        'move_type',
+        'invoice_currency_rate',
+    )
     def _compute_l10n_hu_currency(self):
         for record in self:
+            # Alapértelmezett értékek
+            record.l10n_hu_invoice_currency_rate_date = False
+            record.l10n_hu_huf_currency = False
+            record.l10n_hu_huf_rate = 0.0
+            record.l10n_hu_invoice_currency_rate_inverse = 0.0
+
+            # Általános könyvelési tételeknél és nem magyar cégeknél
+            # nincs szükség HU+ árfolyamszámításra.
+            if (
+                    record.move_type == 'entry'
+                    or record.company_id.account_fiscal_country_id.code != 'HU'
+                    or not record.invoice_currency_rate
+            ):
+                continue
+
             rate_data = record.l10n_hu_plus_get_rate_data({})
-            record.l10n_hu_invoice_currency_rate_date = rate_data.get('l10n_hu_invoice_currency_rate_date', None)
-            record.l10n_hu_huf_currency = rate_data.get('l10n_hu_huf_currency', None)
-            record.l10n_hu_huf_rate = rate_data.get('l10n_hu_huf_rate', 0.0)
-            record.l10n_hu_invoice_currency_rate_inverse = rate_data.get('l10n_hu_invoice_currency_rate_inverse', None)
+
+            record.l10n_hu_invoice_currency_rate_date = rate_data.get(
+                'l10n_hu_invoice_currency_rate_date'
+            )
+            record.l10n_hu_huf_currency = rate_data.get(
+                'l10n_hu_huf_currency'
+            )
+            record.l10n_hu_huf_rate = rate_data.get(
+                'l10n_hu_huf_rate', 0.0
+            )
+            record.l10n_hu_invoice_currency_rate_inverse = rate_data.get(
+                'l10n_hu_invoice_currency_rate_inverse', 0.0
+            )
 
     def _compute_l10n_hu_delivery_period_text(self):
         for record in self:
