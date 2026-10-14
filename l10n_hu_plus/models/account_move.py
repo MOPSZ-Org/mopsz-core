@@ -351,6 +351,7 @@ class L10nHuPlusAccountMove(models.Model):
 
         # Get composer
         try:
+            # compose_form_id = self.env.ref('mail.email_compose_message_wizard_form').id
             compose_form_id = self.env['ir.model.data']._xmlid_lookup('mail.email_compose_message_wizard_form')[1]
         except ValueError:
             compose_form_id = False
@@ -471,29 +472,26 @@ class L10nHuPlusAccountMove(models.Model):
                 'views': [(list_view.id, 'list'), (form_view.id, 'form')],
             }
 
-    def action_l10n_hu_view_original_invoice(self):
-        """ View original invoice """
+    def action_l10n_hu_view_invoice_chain(self):
         self.ensure_one()
-        original_invoice = None
-        if self.l10n_hu_original_invoice_number:
-            if self.move_type in ['in_invoice', 'in_refund']:
-                original_invoice = self.env['account.move'].search([
-                    ('company_id', '=', self.company_id.id),
-                    ('move_type', 'in', ['in_invoice', 'in_refund']),
-                    ('ref', 'ilike', self.l10n_hu_original_invoice_number)
-                ], limit=1)
-            elif self.move_type in ['out_invoice', 'out_refund']:
-                original_invoice = self.env['account.move'].search([
-                    ('company_id', '=', self.company_id.id),
-                    ('move_type', 'in', ['out_invoice', 'out_refund']),
-                    ('name', 'ilike', self.l10n_hu_original_invoice_number)
-                ], limit=1)
-            else:
-                pass
-        if original_invoice:
+        base_invoice = self._l10n_hu_get_chain_base()
+        chain_invoices = base_invoice._l10n_hu_get_chain_invoices()
+        return {
+            'name': _("Account Move"),
+            'domain': [('id', 'in', chain_invoices.ids)],
+            'res_model': 'account.move',
+            'target': 'current',
+            'type': 'ir.actions.act_window',
+            'view_mode': 'list,form',
+        }
+
+    def action_l10n_hu_view_original_invoice(self):
+        self.ensure_one()
+        base_invoice = self._l10n_hu_get_chain_base()
+        if base_invoice:
             return {
-                'name': _("HU+ Wizard"),
-                'res_id': original_invoice.id,
+                'name': _("Account Move"),
+                'res_id': base_invoice.id,
                 'res_model': 'account.move',
                 'target': 'current',
                 'type': 'ir.actions.act_window',

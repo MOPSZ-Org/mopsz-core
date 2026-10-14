@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 19.0+e\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-01-06 20:55+0000\n"
-"PO-Revision-Date: 2026-01-06 20:55+0000\n"
+"POT-Creation-Date: 2026-08-07 07:19+0000\n"
+"PO-Revision-Date: 2026-08-07 07:19+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -315,6 +315,7 @@ msgstr "Könyvelési napló"
 
 #. module: l10n_hu_plus
 #. odoo-python
+#: code:addons/l10n_hu_plus/models/account_move.py:0
 #: code:addons/l10n_hu_plus/wizard/wizard.py:0
 #: model:ir.model.fields,field_description:l10n_hu_plus.field_l10n_hu_plus_wizard__account_move
 #: model:ir.model.fields.selection,name:l10n_hu_plus.selection__l10n_hu_plus_tag__tag_type__account_move
@@ -1558,6 +1559,13 @@ msgid "External ID"
 msgstr "Külső ID"
 
 #. module: l10n_hu_plus
+#: model_terms:ir.ui.view,arch_db:l10n_hu_plus.view_partner_form_inherit
+#: model_terms:ir.ui.view,arch_db:l10n_hu_plus.view_partner_tree_inherit
+#: model_terms:ir.ui.view,arch_db:l10n_hu_plus.view_res_partner_filter_inherit
+msgid "FELIR"
+msgstr ""
+
+#. module: l10n_hu_plus
 #: model:ir.model,name:l10n_hu_plus.model_account_fiscal_position
 #: model:ir.model.fields,field_description:l10n_hu_plus.field_res_partner__property_account_position_id
 #: model:ir.model.fields,field_description:l10n_hu_plus.field_res_users__property_account_position_id
@@ -1763,6 +1771,12 @@ msgstr "HU dokumentum ÁFA HUF"
 #: model:ir.model.fields,field_description:l10n_hu_plus.field_account_journal__l10n_hu_edi_sending
 msgid "HU EDI Sending"
 msgstr "HU EDI küldés"
+
+#. module: l10n_hu_plus
+#: model:ir.model.fields,field_description:l10n_hu_plus.field_res_partner__l10n_hu_felir
+#: model:ir.model.fields,field_description:l10n_hu_plus.field_res_users__l10n_hu_felir
+msgid "HU FELIR"
+msgstr ""
 
 #. module: l10n_hu_plus
 #: model:ir.model.fields,field_description:l10n_hu_plus.field_res_partner__l10n_hu_financial_representative
@@ -2318,6 +2332,11 @@ msgid "Invoice"
 msgstr "Számla"
 
 #. module: l10n_hu_plus
+#: model_terms:ir.ui.view,arch_db:l10n_hu_plus.view_move_form_inherit
+msgid "Invoice Chain"
+msgstr "Számlalánc"
+
+#. module: l10n_hu_plus
 #: model_terms:ir.ui.view,arch_db:l10n_hu_plus.invoice_view_list
 msgid "Invoice Date"
 msgstr "Számla kelte"
@@ -2819,6 +2838,11 @@ msgstr "Eredeti könyvelés tételsor"
 
 #. module: l10n_hu_plus
 #: model_terms:ir.ui.view,arch_db:l10n_hu_plus.view_move_form_inherit
+msgid "Original Invoice"
+msgstr "Eredeti számla"
+
+#. module: l10n_hu_plus
+#: model_terms:ir.ui.view,arch_db:l10n_hu_plus.view_move_form_inherit
 msgid "Original Invoice Number"
 msgstr "Eredeti számla sorszám"
 
@@ -3175,9 +3199,15 @@ msgid "Selected"
 msgstr "Kiválasztva"
 
 #. module: l10n_hu_plus
+#: model_terms:ir.ui.view,arch_db:l10n_hu_plus.report_invoice_document_inherit
 #: model_terms:ir.ui.view,arch_db:l10n_hu_plus.view_partner_form_inherit
 msgid "Self Billing"
 msgstr "Önszámlázás"
+
+#. module: l10n_hu_plus
+#: model_terms:ir.ui.view,arch_db:l10n_hu_plus.report_invoice_document_inherit
+msgid "Self Billing Credit Note"
+msgstr "Önszámlázás jóváírás"
 
 #. module: l10n_hu_plus
 #: model:ir.model.fields.selection,name:l10n_hu_plus.selection__account_fiscal_position__l10n_hu_incorporation__self_employed

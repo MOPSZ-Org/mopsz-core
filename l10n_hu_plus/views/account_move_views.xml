@@ -70,7 +70,13 @@
                                 <li name="l10n_hu_view_account_move_lines" groups="account.group_account_readonly">
                                     <button name="action_l10n_hu_view_account_move_lines" class="dropdown-item" icon="fa-list" string="Account Move Line" type="object"/>
                                 </li>
-                                <li name="l10n_hu_account_move_line_divider" class="dropdown-divider" groups="account.group_account_readonly"/>
+                                <li name="l10n_hu_view_original_invoice" groups="account.group_account_readonly">
+                                    <button name="action_l10n_hu_view_original_invoice" class="dropdown-item" icon="fa-folder-open" invisible="not reversed_entry_id and not debit_origin_id" string="Original Invoice" type="object"/>
+                                </li>
+                                <li name="l10n_hu_view_invoice_chain" groups="account.group_account_readonly">
+                                    <button name="action_l10n_hu_view_invoice_chain" class="dropdown-item" icon="fa-list" string="Invoice Chain" type="object"/>
+                                </li>
+                                <li name="l10n_hu_account_move_divider" class="dropdown-divider" groups="account.group_account_readonly"/>
                                 <li name="l10n_hu_view_analytic_lines" groups="analytic.group_analytic_accounting">
                                     <button name="action_l10n_hu_view_analytic_lines" class="dropdown-item" icon="fa-list" string="Analytic Line" type="object"/>
                                 </li>
@@ -129,8 +135,9 @@
                             <label name="l10n_hu_original_invoice" for="l10n_hu_original_invoice_number" invisible="l10n_hu_document_type_technical_name in ['invoice_normal']" string="Original Invoice Number"/>
                             <div name="l10n_hu_original_invoice" invisible="l10n_hu_document_type_technical_name in ['invoice_normal']">
                                 <field name="reversed_entry_id" invisible="not reversed_entry_id"/>
-                                <field name="l10n_hu_original_invoice_number" class="oe_inline" invisible="reversed_entry_id" readonly="state != 'draft' and checked"/>
-                                <button name="action_l10n_hu_view_original_invoice" class="oe_inline btn-sm btn-link" icon="fa-folder-open" invisible="reversed_entry_id or not l10n_hu_original_invoice_number" string="View" type="object"/>
+                                <field name="debit_origin_id" invisible="not debit_origin_id"/>
+                                <field name="l10n_hu_original_invoice_number" class="oe_inline" invisible="reversed_entry_id or debit_origin_id" readonly="state != 'draft' and checked"/>
+                                <button name="action_l10n_hu_view_original_invoice" class="oe_inline btn-sm btn-link" icon="fa-folder-open" invisible="reversed_entry_id or debit_origin_id or not l10n_hu_original_invoice_number" string="View" type="object"/>
                             </div>
                             <!-- Delivery period -->
                             <label name="l10n_hu_delivery_period_label" for="l10n_hu_delivery_period_start" string="Delivery Period"/>
