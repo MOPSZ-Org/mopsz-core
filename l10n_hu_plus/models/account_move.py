@@ -238,6 +238,13 @@ class L10nHuPlusAccountMove(models.Model):
     @api.depends('currency_id', 'invoice_date', 'delivery_date')
     def _compute_l10n_hu_currency(self):
         for record in self:
+            # deferred / misc journal entries: document HUF rate is invoice-only
+            if not record.is_invoice(include_receipts=True):
+                record.l10n_hu_invoice_currency_rate_date = False
+                record.l10n_hu_huf_currency = False
+                record.l10n_hu_huf_rate = 0.0
+                record.l10n_hu_invoice_currency_rate_inverse = 0.0
+                continue
             rate_data = record.l10n_hu_plus_get_rate_data({})
             record.l10n_hu_invoice_currency_rate_date = rate_data.get('l10n_hu_invoice_currency_rate_date', None)
             record.l10n_hu_huf_currency = rate_data.get('l10n_hu_huf_currency', None)
@@ -578,6 +585,26 @@ class L10nHuPlusAccountMove(models.Model):
             return str(self.company_id.vat) + "_" + str(self.l10n_hu_proforma_name).replace('/', '_')
         else:
             return super()._get_report_base_filename()
+
+    def _l10n_hu_get_currency_rate(self) -> float:
+        """Guard factory ``1 / invoice_currency_rate`` against ZeroDivisionError.
+
+        :return: currency conversion rate (invoice currency → HUF)
+        :rtype: float
+        """
+        self.ensure_one()
+        currency_huf = self.env.ref("base.HUF")
+        # guard: factory l10n_hu_edi does 1 / invoice_currency_rate; deferred entries often have rate 0
+        if not self.invoice_currency_rate:
+            if self.currency_id == currency_huf:
+                return 1.0
+            return self.env["res.currency"]._get_conversion_rate(
+                from_currency=self.currency_id,
+                to_currency=currency_huf,
+                company=self.company_id,
+                date=self._get_invoice_currency_rate_date(),
+            ) or 0.0
+        return super()._l10n_hu_get_currency_rate()
 
     def _l10n_hu_edi_get_invoice_values(self):
         """ Super for original method in l10n_hu_edi app
