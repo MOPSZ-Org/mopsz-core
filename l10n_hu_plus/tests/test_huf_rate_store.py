@@ -22,6 +22,7 @@ class TestHufRateStore(L10nHuPlusTestCommon):
     - Cancelled HUF rate stays frozen when the rate table changes
     - Document HUF rate follows stored HUF Rate on draft
     - NAV / currency-rate helper uses stored HUF Rate after post
+    - EUR company + EUR invoice NAV rate is live EUR→HUF (~400), not 1/invoice_currency_rate (~1)
     """
 
     @classmethod
@@ -179,4 +180,34 @@ class TestHufRateStore(L10nHuPlusTestCommon):
             float_compare(invoice_values["exchangeRate"], stored_rate, precision_rounding=0.0001),
             0,
             "NAV XML exchangeRate must equal stored l10n_hu_huf_rate after post",
+        )
+
+    def test_eur_company_eur_invoice_nav_rate_not_one(self) -> None:
+        """Verify EUR company + EUR invoice does not use 1/invoice_currency_rate (≈1) for NAV."""
+        invoice = self._create_draft_invoice()
+        self.assertAlmostEqual(
+            invoice.invoice_currency_rate,
+            1.0,
+            places=4,
+            msg="EUR company + EUR invoice must have invoice_currency_rate ≈ 1",
+        )
+        self.assertAlmostEqual(
+            invoice.l10n_hu_huf_rate,
+            400.0,
+            places=4,
+            msg="Draft must store live EUR→HUF rate, not 1/invoice_currency_rate",
+        )
+        self.assertAlmostEqual(
+            invoice._l10n_hu_get_currency_rate(),
+            400.0,
+            places=4,
+            msg="Draft NAV helper must return live EUR→HUF conversion, not ≈1",
+        )
+        self._post_keeping_draft_huf_rate(invoice)
+        invoice_values = invoice._l10n_hu_edi_get_invoice_values()
+        self.assertAlmostEqual(
+            invoice_values["exchangeRate"],
+            400.0,
+            places=4,
+            msg="NAV XML exchangeRate must be ~400 HUF/EUR, not 1",
         )
