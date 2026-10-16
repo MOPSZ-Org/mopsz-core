@@ -22,7 +22,8 @@ Főbb funkciók
 - **Folyamatos szolgáltatás számlák** — ismétlődő/folyamatos szolgáltatási számlák támogatása
 - **ÁFA dátum kezelés** — külön ÁFA dátum kezelés a számlákon
 - **Árfolyam kezelés** — devizás számlák árfolyama a *HU+* fülön (nem forintos könyvelésű cégnél
-  a dokumentum HUF árfolyama megerősítéskor rögzül, és ezt használja a NAV-beküldés és a nyomtatás is);
+  a dokumentum HUF árfolyama megerősítéskor rögzül, és ezt használja a NAV-beküldés és a nyomtatás is;
+  a HUF árfolyam csak számlákon értelmezett, elhatárolási / egyéb naplótételeken nem);
   sztornó átveszi az eredeti számla árfolyamát; módosító számlán azonos teljesítési dátum esetén az eredeti
   árfolyam marad, eltérő dátumnál az aktuális árfolyam érvényesül; a jóváírás varázslón a visszakönyvelési
   dátum mező nem jelenik meg; modulfrissítéskor a megerősített / érvénytelenített számlákon az üres HUF
@@ -59,7 +60,8 @@ Key capabilities
 - **Continuous service invoices** — support for recurring/continuous service invoicing
 - **VAT date handling** — separate VAT date management on invoices
 - **Currency rate management** — foreign-currency document rates on the *HU+* tab (for non-HUF company
-  currency the document HUF rate is locked on posting and used for NAV submission and printing);
+  currency the document HUF rate is locked on posting and used for NAV submission and printing;
+  the HUF rate applies to invoices only, not to deferred / miscellaneous journal entries);
   storno takes over the original invoice rate; on a modification invoice the original rate is kept when the
   delivery date matches the original, otherwise the current rate applies; the reverse date field is hidden
   on the credit note wizard; on module upgrade, empty HUF rates on posted / cancelled invoices are filled

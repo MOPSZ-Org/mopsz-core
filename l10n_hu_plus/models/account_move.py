@@ -270,16 +270,22 @@ class L10nHuPlusAccountMove(models.Model):
     def _compute_l10n_hu_huf_rate(self):
         """Compute and store invoice→HUF rate; freeze after posting.
 
-        Draft invoices refresh from ``l10n_hu_plus_get_rate_data`` when currency or document dates change. Posted and cancelled
-        moves keep the DB value via ``_origin`` so later rate-table or date-driven recomputes cannot change the document HUF rate;
-        if that value is empty (invalidated cache on post, or pre-store upgrade), compute once from the live table then freeze on
-        later runs. When the reversal wizard sets ``l10n_hu_storno_original_huf_rates`` (non-HUF company HU storno), create-time
-        compute takes the original invoice's stored rate instead of the live table — same pattern as ``l10n_hu_oerp`` for
-        ``invoice_currency_rate``. Draft modification invoices (``invoice_modification``) reuse the original stored HUF rate while
-        ``delivery_date`` matches the original invoice; any other delivery date falls through to the live table path.
+        Only invoices/receipts are in scope — journal entries (including deferred entries) get ``0.0`` and never call
+        ``l10n_hu_plus_get_rate_data``. Draft invoices refresh from that helper when currency or document dates change.
+        Posted and cancelled moves keep the DB value via ``_origin`` so later rate-table or date-driven recomputes cannot
+        change the document HUF rate; if that value is empty (invalidated cache on post, or pre-store upgrade), compute once
+        from the live table then freeze on later runs. When the reversal wizard sets ``l10n_hu_storno_original_huf_rates``
+        (non-HUF company HU storno), create-time compute takes the original invoice's stored rate instead of the live table —
+        same pattern as ``l10n_hu_oerp`` for ``invoice_currency_rate``. Draft modification invoices (``invoice_modification``)
+        reuse the original stored HUF rate while ``delivery_date`` matches the original invoice; any other delivery date falls
+        through to the live table path.
         """
         storno_huf_rates = self.env.context.get("l10n_hu_storno_original_huf_rates")
         for record in self:
+            # deferred / misc journal entries: document HUF rate is invoice-only
+            if not record.is_invoice(include_receipts=True):
+                record.l10n_hu_huf_rate = 0.0
+                continue
             # create-time HU storno: keep original stored invoice→HUF rate (wizard context)
             if storno_huf_rates and record.reversed_entry_id.id in storno_huf_rates:
                 record.l10n_hu_huf_rate = storno_huf_rates[record.reversed_entry_id.id]
@@ -630,27 +636,39 @@ class L10nHuPlusAccountMove(models.Model):
     # Business methods
     ## SUPER
     def _l10n_hu_get_currency_rate(self):
-        """Override: prefer stored HU+ HUF rate / manual invoice rate for NAV and document HUF.
+        """Override: prefer stored HU+ HUF rate / conversion rate for NAV and document HUF.
 
         :return: currency conversion rate (invoice_ccy → HUF)
         :rtype: float
 
         Priority:
-        1. Non-HUF company, HU fiscal, posted/cancel with stored ``l10n_hu_huf_rate`` — document rate frozen at post
-           (draft must keep calling ``super()`` so ``_compute_l10n_hu_huf_rate`` can still refresh from the live table).
-        2. HUF company with manually overridden ``invoice_currency_rate`` — ``1 / invoice_currency_rate``.
-        3. Otherwise live ``res.currency.rate`` via ``l10n_hu_edi``.
+        1. Non-HUF company, HU fiscal, posted/cancel with stored ``l10n_hu_huf_rate`` — document rate frozen at post.
+        2. Non-HUF company, HU fiscal — live ``res.currency`` conversion (invoice → HUF). Never use
+           ``1 / invoice_currency_rate``: that field is company-ccy based (e.g. EUR company + EUR invoice ≈ 1).
+        3. HUF company with manually overridden ``invoice_currency_rate`` — ``1 / invoice_currency_rate``.
+        4. Empty ``invoice_currency_rate`` — avoid factory ``1 / rate`` ZeroDivisionError (deferred entry moves); fall back
+           to ``res.currency`` conversion rate, or ``0.0``.
+        5. Otherwise live rate via ``l10n_hu_edi`` (``1 / invoice_currency_rate``) — HUF company only.
         """
         self.ensure_one()
         currency_huf = self.env.ref("base.HUF")
+        is_hu_fiscal = self.company_id.account_fiscal_country_id.code == "HU"
+        is_non_huf_company = self.company_id.currency_id != currency_huf
         # posted/cancel non-HUF company: NAV XML and callers must use the frozen HU+ HUF Rate
-        if (self.company_id.account_fiscal_country_id.code == "HU"
-                and self.company_id.currency_id != currency_huf
-                and self.state != "draft"
-                and self.l10n_hu_huf_rate):
+        if is_hu_fiscal and is_non_huf_company and self.state != "draft" and self.l10n_hu_huf_rate:
             if self.currency_id == currency_huf:
                 return 1.0
             return self.l10n_hu_huf_rate
+        # non-HUF company (incl. draft): live invoice→HUF; do not call super() (factory 1/invoice_currency_rate)
+        if is_hu_fiscal and is_non_huf_company:
+            if self.currency_id == currency_huf:
+                return 1.0
+            return self.env["res.currency"]._get_conversion_rate(
+                from_currency=self.currency_id,
+                to_currency=currency_huf,
+                company=self.company_id,
+                date=self._get_invoice_currency_rate_date(),
+            ) or 0.0
         # HUF company: honour a manual invoice_currency_rate override
         if (self.is_invoice(include_receipts=True)
                 and self.company_id.currency_id == currency_huf
@@ -658,6 +676,16 @@ class L10nHuPlusAccountMove(models.Model):
                 and self.invoice_currency_rate
                 and self.invoice_currency_rate != self.expected_currency_rate):
             return 1 / self.invoice_currency_rate
+        # guard: factory l10n_hu_edi does 1 / invoice_currency_rate; deferred entries often have rate 0
+        if not self.invoice_currency_rate:
+            if self.currency_id == currency_huf:
+                return 1.0
+            return self.env["res.currency"]._get_conversion_rate(
+                from_currency=self.currency_id,
+                to_currency=currency_huf,
+                company=self.company_id,
+                date=self._get_invoice_currency_rate_date(),
+            ) or 0.0
         return super()._l10n_hu_get_currency_rate()
 
     @api.model
@@ -1763,7 +1791,7 @@ class L10nHuPlusAccountMove(models.Model):
             accounting_rate = 0.0
             debug_list.append("accounting_rcr not found, it is set to default 0.0")
 
-        ## HU+ huf_rate
+        ## HU+ huf_rate (live invoice→HUF for store/compute; never 1/invoice_currency_rate on non-HUF companies)
         huf_rate = 0.0
         ### Company HUF AND invoice HUF
         if company_currency.name == 'HUF' and invoice_currency.name == 'HUF':
@@ -1780,10 +1808,19 @@ class L10nHuPlusAccountMove(models.Model):
             if huf_rate_rcr:
                 debug_list.append(f"huf_rate_rcr company_rate: {huf_rate_rcr.company_rate}")
                 debug_list.append(f"huf_rate_rcr inverse_company_rate: {huf_rate_rcr.inverse_company_rate}")
-
-            # NOTES: we use the same method as in l10n_hu_edi app
-            huf_rate = self._l10n_hu_get_currency_rate()
-            debug_list.append(f"huf_rate _l10n_hu_get_currency_rate: {huf_rate}")
+            # live table lookup (same as pre-factory-regression l10n_hu_edi); do not call _l10n_hu_get_currency_rate
+            # here: draft must stay free of circular store/compute, and factory super() is wrong for non-HUF
+            # companies (1/invoice_currency_rate ~ 1 when invoice ccy == company ccy)
+            if invoice_currency == huf_currency:
+                huf_rate = 1.0
+            else:
+                huf_rate = self.env["res.currency"]._get_conversion_rate(
+                    from_currency=invoice_currency,
+                    to_currency=huf_currency,
+                    company=self.company_id,
+                    date=currency_rate_date,
+                ) or 0.0
+            debug_list.append(f"huf_rate _get_conversion_rate: {huf_rate}")
         else:
             debug_list.append("huf_rate else scenario, probably currency_rate_date is not set")
 
