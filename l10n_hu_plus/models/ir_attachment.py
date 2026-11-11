@@ -33,11 +33,14 @@ class L10nHuPlusIrAttachment(models.Model):
     @api.ondelete(at_uninstall=True)
     def _l10n_hu_plus_except_audit_trail(self):
         """ Inspired by: https://github.com/odoo/odoo/blob/1b8f8908d31df67604413b3aa764f16ffe18d312/addons/l10n_de/models/ir_attachment.py#L14 """
+        # HU / restrictive_audit_trail checks before reading attachment.raw (HU-7)
         audit_trail_attachments = self.filtered(lambda attachment:
             attachment.res_model == 'account.move'
             and attachment.res_id
-            and attachment.raw
+            and attachment.company_id
+            and attachment.company_id.account_fiscal_country_id.code == 'HU'
             and attachment.company_id.restrictive_audit_trail
+            and attachment.raw
             and guess_mimetype(attachment.raw) in (
                 'application/pdf',
                 'application/xml',
@@ -46,7 +49,7 @@ class L10nHuPlusIrAttachment(models.Model):
         id2move = self.env['account.move'].browse(set(audit_trail_attachments.mapped('res_id'))).exists().grouped('id')
         for attachment in audit_trail_attachments:
             move = id2move.get(attachment.res_id)
-            if move and move.posted_before and move.checked and move.company_id.account_fiscal_country_id.code == 'HU':
+            if move and move.posted_before and move.checked:
                 ue = exceptions.UserError(_("You cannot remove parts of the audit trail."))
                 ue._audit_trail = True
                 raise ue

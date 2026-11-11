@@ -18,10 +18,6 @@ class L10nHuPlusResPartner(models.Model):
     # Default methods
 
     # Field declarations
-    ## Odoo
-    property_account_position_id = fields.Many2one(
-        tracking=True,
-    )
     ## HU+
     l10n_hu_financial_representative = fields.Many2one(
         comodel_name='res.partner',
@@ -96,6 +92,8 @@ class L10nHuPlusResPartner(models.Model):
     # Constraints and onchanges
     @api.onchange('country_id', 'is_company', 'parent_id', 'property_account_position_id')
     def _onchange_l10n_hu_plus_vat_status(self):
+        if not self._l10n_hu_plus_partner_needs_hu_defaults():
+            return
         vat_status_result = self.l10n_hu_plus_get_vat_status()
         self.l10n_hu_incorporation = vat_status_result.get('l10n_hu_incorporation', None)
         self.l10n_hu_vat_status = vat_status_result.get('l10n_hu_vat_status', None)
@@ -136,6 +134,32 @@ class L10nHuPlusResPartner(models.Model):
 
     # Business methods
     ## HU+
+    def _l10n_hu_plus_partner_needs_hu_defaults(self):
+        """Return whether HU fiscal defaults may be applied on this partner.
+
+        Shared (company-less) foreign partners must not receive HU vat/incorporation
+        defaults just because they are visible in a multi-company database.
+
+        :returns: True when HU defaults are appropriate
+        :rtype: bool
+        """
+        self.ensure_one()
+        if self.country_id and self.country_id.code == "HU":
+            return True
+        if self.parent_id and self.parent_id.country_id and self.parent_id.country_id.code == "HU":
+            return True
+        if (self.commercial_partner_id and self.commercial_partner_id != self and self.commercial_partner_id.country_id
+                and self.commercial_partner_id.country_id.code == "HU"):
+            return True
+        company = self.company_id or self.env.company
+        company_is_hu = bool(
+            (company.account_fiscal_country_id and company.account_fiscal_country_id.code == "HU")
+            or (company.country_id and company.country_id.code == "HU")
+        )
+        if company_is_hu and (not self.country_id or self.country_id.code == "HU"):
+            return True
+        return False
+
     @api.model
     def l10n_hu_plus_get_vat_status(self):
         """ Get HU+ VAT status data
