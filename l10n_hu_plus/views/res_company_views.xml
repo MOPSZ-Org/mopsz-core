@@ -31,10 +31,10 @@
                         </group>
                         <group name="l10n_hu_plus_api_2">
                             <div name="l10n_hu_plus_api_actions" colspan="2">
-                                <button name="action_l10n_hu_plus_api_create_registration" class="btn-secondary btn-sm m-2" icon="fa-magic" invisible="l10n_hu_plus_api_registered" string="Create API registration" type="object"/>
-                                <button name="action_l10n_hu_plus_api_get_objects" class="btn-secondary btn-sm m-2" icon="fa-download" invisible="not l10n_hu_plus_api_registered" string="Download API objects" type="object"/>
-                                <button name="action_l10n_hu_plus_api_check_registration" class="btn-secondary btn-sm m-2" icon="fa-magic" invisible="not l10n_hu_plus_api_registered" string="Check API registration" type="object"/>
-                                <button name="action_l10n_hu_plus_api_delete_registration" class="btn-warning btn-sm m-2 text-white" icon="fa-trash" invisible="not l10n_hu_plus_api_registered" string="Delete API registration" type="object"/>
+                                <button name="action_l10n_hu_plus_api_create_registration" class="btn-secondary btn-sm m-2" groups="l10n_hu_plus.manager_group" icon="fa-magic" invisible="l10n_hu_plus_api_registered" string="Create API registration" type="object"/>
+                                <button name="action_l10n_hu_plus_api_get_objects" class="btn-secondary btn-sm m-2" groups="l10n_hu_plus.manager_group" icon="fa-download" invisible="not l10n_hu_plus_api_registered" string="Download API objects" type="object"/>
+                                <button name="action_l10n_hu_plus_api_check_registration" class="btn-secondary btn-sm m-2" groups="l10n_hu_plus.manager_group" icon="fa-magic" invisible="not l10n_hu_plus_api_registered" string="Check API registration" type="object"/>
+                                <button name="action_l10n_hu_plus_api_delete_registration" class="btn-warning btn-sm m-2 text-white" groups="l10n_hu_plus.manager_group" icon="fa-trash" invisible="not l10n_hu_plus_api_registered" string="Delete API registration" type="object"/>
                                 <button name="action_l10n_hu_plus_api_reset_registration" class="btn-danger btn-sm m-2 text-white " groups="l10n_hu_plus.manager_group" icon="fa-eraser" string="Reset API registration" type="object"/>
                                 <button name="action_l10n_hu_plus_api_list_logs" class="btn-link btn-sm m-2" groups="base.group_no_one" icon="fa-history" string="View API logs" type="object"/>
                             </div>

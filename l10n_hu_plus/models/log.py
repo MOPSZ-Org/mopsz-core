@@ -172,16 +172,21 @@ class L10nHuPlusLog(models.Model):
             # Initialize variables
             display_name = False
 
-            # Get values
+            # Resolve source without sudo so ACL / record rules still apply
             if record.source_model_name and record.source_record_id:
                 try:
-                    source_record = self.env[record.source_model_name].sudo().search([
-                        ('id', '=', record.source_record_id)
-                    ])
-                    if source_record:
-                        display_name = source_record.display_name
-                except:
-                    pass
+                    source_model = self.env[record.source_model_name]
+                except KeyError:
+                    source_model = None
+                if source_model is not None:
+                    try:
+                        source_record = source_model.search([("id", "=", record.source_record_id)], limit=1)
+                        if source_record:
+                            display_name = source_record.display_name
+                    except exceptions.AccessError:
+                        display_name = False
+                    except Exception:
+                        display_name = False
 
             # Set field
             record.source_display_name = display_name
