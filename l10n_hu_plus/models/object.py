@@ -6,6 +6,8 @@ import random
 import string
 import uuid
 
+import requests
+
 # 2 : imports of odoo
 from odoo import _, api, exceptions, fields, models, tools  # alphabetically ordered
 
@@ -13,6 +15,7 @@ from odoo import _, api, exceptions, fields, models, tools  # alphabetically ord
 from odoo.tools.translate import html_translate
 
 # 4 : variable declarations
+_HTTP_TIMEOUT = (5, 30)
 
 
 # Class
@@ -413,11 +416,11 @@ class L10nHuPlusObject(models.Model):
         if len(error_list) == 0:
             # Make request
             if request_method == 'DELETE':
-                response = requests.delete(request_url, headers=request_headers, data=request_data)
+                response = requests.delete(request_url, headers=request_headers, data=request_data, timeout=_HTTP_TIMEOUT)
             elif request_method == 'GET':
-                response = requests.get(request_url, headers=request_headers, data=request_data)
+                response = requests.get(request_url, headers=request_headers, data=request_data, timeout=_HTTP_TIMEOUT)
             elif request_method == 'POST':
-                response = requests.post(request_url, headers=request_headers, data=request_data)
+                response = requests.post(request_url, headers=request_headers, data=request_data, timeout=_HTTP_TIMEOUT)
             else:
                 pass
             # raise exceptions.UserError(str(response.text))

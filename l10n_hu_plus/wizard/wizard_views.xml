@@ -219,7 +219,6 @@
                     <field name="action_execute_visible" invisible="1"/>
                     <button name="action_execute" class="btn-primary" data-hotkey="s" default_focus="1" invisible="not action_execute_visible" string="Execute" type="object"/>
                     <button special="cancel" class="btn-default" data-hotkey="x" string="Close"/>
-                    <button name="action_debug" class="btn-default" data-hotkey="d" groups="base.group_no_one" icon="fa-bug" string="Debug" type="object"/>
                 </footer>
             </form>
         </field>

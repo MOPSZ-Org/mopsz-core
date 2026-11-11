@@ -308,16 +308,9 @@
         <field name="model">account.move</field>
         <field name="priority">36</field>
         <field name="arch" type="xml">
-            <!-- Field -->
-            <xpath expr="//field[@name='name'][1]" position="attributes">
-                <attribute name="filter_domain">['|', '|' , '|', '|', '|',
-                    ('name', 'ilike', self), ('invoice_origin', 'ilike', self),
-                    ('ref', 'ilike', self), ('payment_reference', 'ilike', self),
-                    ('partner_id', 'child_of', self),('l10n_hu_proforma_name', 'ilike', self)]
-                </attribute>
-            </xpath>
+            <!-- Field: keep core invoice search filter_domain; add a separate Proforma search field -->
             <xpath expr="//field[@name='journal_id']" position="before">
-                <field name="l10n_hu_proforma_name" string="Proforma"/>
+                <field name="l10n_hu_proforma_name" string="Proforma" filter_domain="[('l10n_hu_proforma_name', 'ilike', self)]"/>
                 <field name="l10n_hu_plus_tag" string="HU+ Tag"/>
                 <field name="l10n_hu_plus_notes" string="HU+ Notes"/>
                 <field name="l10n_hu_vat_status" string="VAT Status"/>

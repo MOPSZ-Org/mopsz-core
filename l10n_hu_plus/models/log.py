@@ -28,6 +28,7 @@ _SECRET_JSON_KEYS = frozenset({
     "x-api-key",
 })
 _REDACTED_SECRET = "***"
+_HTTP_TIMEOUT = (5, 30)
 
 
 # Class
@@ -469,11 +470,11 @@ class L10nHuPlusLog(models.Model):
         if len(error_list) == 0:
             # Make request
             if request_method == 'DELETE':
-                response = requests.delete(request_url, headers=request_headers, data=request_data)
+                response = requests.delete(request_url, headers=request_headers, data=request_data, timeout=_HTTP_TIMEOUT)
             elif request_method == 'GET':
-                response = requests.get(request_url, headers=request_headers, data=request_data)
+                response = requests.get(request_url, headers=request_headers, data=request_data, timeout=_HTTP_TIMEOUT)
             elif request_method == 'POST':
-                response = requests.post(request_url, headers=request_headers, data=request_data)
+                response = requests.post(request_url, headers=request_headers, data=request_data, timeout=_HTTP_TIMEOUT)
             else:
                 response = None
             # raise exceptions.UserError(str(response.json()))
