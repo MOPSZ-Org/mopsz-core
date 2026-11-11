@@ -45,6 +45,7 @@ class L10nHuPlusResCompany(models.Model):
     l10n_hu_plus_technical_data = fields.Json(
         copy=False,
         default=False,
+        groups="base.group_system",
         readonly=True,
         string="HU+ Technical Data",
     )
