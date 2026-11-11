@@ -9,9 +9,10 @@
         <field name="model_id" ref="account.model_account_move"/>
         <field name="state">code</field>
     </record>
-    <!-- Object API cron -->
+    <!-- Object API cron (inactive: object API path is incomplete / unused) -->
     <record id="object_api_cron" model="ir.cron">
         <field name="name">HU+ Object API</field>
+        <field name="active" eval="False"/>
         <field name="code">model.run_object_api_cron()</field>
         <field name="interval_number">1</field>
         <field name="interval_type">days</field>

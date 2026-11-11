@@ -346,7 +346,8 @@ class L10nHuPlusResCompany(models.Model):
             'level': 'info',
             'log_type': request_type,
             'name': name,
-            'model_name': 'res.company',
+            'source_model_name': 'res.company',
+            'source_record_id': company.id,
             'technical_data': request_data,
             'technical_name': 'l10n_hu_plus.l10n_hu_plus_api_registration_request',
         }

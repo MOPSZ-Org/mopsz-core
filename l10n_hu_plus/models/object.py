@@ -557,82 +557,22 @@ class L10nHuPlusObject(models.Model):
     ## CRON
     @api.model
     def run_object_api_cron(self):
-        """ Meant to be called by scheduled cron
+        """Scheduled entry point for HU+ object API sync.
 
-        Run cron for HU object to manage data:
-        - get fresh definitions
+        The previous implementation was non-runnable (wrong model names, unbound locals, invalid log fields) and would raise on
+        every company. Object API sync is rarely used; keep the cron inactive and treat calls as a no-op so schedulers and
+        manual runs neither crash nor grow the HU+ log table.
 
-        :return: nothing, but logs an info entry into l10n.hu.log
+        :return: dictionary describing the skipped run
         """
-        # Initialize variables
-        company_ids = []
-        company_results = []
-        debug_list = []
-        error_list = []
-        info_list = []
-        object_results = []
-        result = {}
-        warning_list = []
-
-        # Get companies
-        companies = self.env['res.company'].sudo().search([])
-
-        # Get config_parameters
-        try:
-            config_param_obj = self.env['ir.config_parameter'].sudo()
-            config_parameters_string = config_param_obj.get_param('l10n_hu_plus.settings')
-            config_parameters = json.loads(config_parameters_string)
-            debug_list.append("config parameters loaded")
-        except:
-            config_parameters = {}
-            warning_list.append("config parameters exception")
-
-        for company in companies:
-            # 1) GET objects
-            api_values = {
-                'query_last_modified_date': query_last_modified_date,
-                'query_page': query_page,
-                'query_per_page': query_per_page,
-                'request_type': 'get_objects',
-            }
-            api_result = self.env['l10n.hu.object'].api_request_response(api_values)
-            if len(api_result.get('error_list', [])) == 0:
-                pass
-
-            # Update result
-            company_result = {
-                'company_id': company.id,
-                'object_count': len(object_results),
-                'object_results': object_results
-            }
-
-            # Append to list
-            company_ids.append(company.id)
-            company_results.append(company_result)
-
-        # Update result
-        result.update({
-            'company_count': len(company_ids),
-            'company_ids': company_ids,
-            'company_results': company_results,
-            'error_list': error_list,
-        })
-
-        # HU log
-        log_values = {
-            'app': "l10n_hu_base",
-            'description': str(result),
-            'level': "info",
-            'name': "run_object_api_cron END",
-            'user': self.env.user,
+        return {
+            'company_count': 0,
+            'company_ids': [],
+            'company_results': [],
+            'error_list': [],
+            'skipped': True,
+            'skip_reason': 'object_api_cron_disabled',
         }
-        try:
-            self.env['l10n.hu.plus.log'].create(log_values)
-        except:
-            self.env['l10n.hu.plus.log'].sudo().create(log_values)
-
-        # Return
-        return
 
     ## HELPER
     @api.model
