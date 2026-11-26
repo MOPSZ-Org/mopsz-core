@@ -709,8 +709,9 @@ class L10nHuPlusAccountMove(models.Model):
         NOTES:
         - cron jobs are not company aware
         - we use batch limit per journal
+        - skip log rows when a HU company has no eligible journals (no-op)
 
-        :return: dictionary, also an info entry into l10n_hu.log
+        :return: dictionary, also an info entry into l10n_hu.log when work was done
         """
         # Initialize variables
         company_ids = []
@@ -739,6 +740,10 @@ class L10nHuPlusAccountMove(models.Model):
             ])
             debug_list.append("processing company: " + str(company.id))
             debug_list.append("eligible journal count: " + str(len(journals)))
+
+            # No eligible journals: skip company log (avoid no-op log growth)
+            if not journals:
+                continue
 
             # Process journals
             for journal in journals:
@@ -796,8 +801,7 @@ class L10nHuPlusAccountMove(models.Model):
             company_ids.append(company.id)
             company_results.append(company_result)
 
-            # Create log
-            ## NOTES: we want to log everything, even failed attempts
+            # Create log only when at least one eligible journal was processed
             log_description = {'company_result': company_result}
             log_values = {
                 'app_name': 'l10n_hu_plus',

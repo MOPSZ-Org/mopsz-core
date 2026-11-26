@@ -509,15 +509,6 @@ class L10nHuPlusWizard(models.TransientModel):
     # CRUD methods (and display_name, name_search, ...) overrides
 
     # Action methods
-    def action_debug(self):
-        self.ensure_one()
-        if self.action_type == 'account_move' and len(self.account_move) == 1:
-            data_result = self.account_move[0].l10n_hu_plus_get_data({})
-            data_display = json.dumps(data_result, default=str, indent=4)
-            raise exceptions.UserError(f"l10n_hu_plus_get_data\n{data_display}")
-        else:
-            raise exceptions.UserError(_("Debug not available for this action!"))
-
     def action_execute(self):
         # Ensure one
         self.ensure_one()

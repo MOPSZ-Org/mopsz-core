@@ -15,6 +15,20 @@ from odoo import _, api, exceptions, fields, models  # alphabetically ordered
 # 3 : imports from odoo modules
 
 # 4 : variable declarations
+_SECRET_HTTP_HEADER_KEYS = frozenset({
+    "authorization",
+    "proxy-authorization",
+    "x-api-key",
+})
+_SECRET_JSON_KEYS = frozenset({
+    "api_key",
+    "password",
+    "passwordhash",
+    "requestsignature",
+    "x-api-key",
+})
+_REDACTED_SECRET = "***"
+_HTTP_TIMEOUT = (5, 30)
 
 
 # Class
@@ -137,6 +151,7 @@ class L10nHuPlusLog(models.Model):
     # TECHNICAL
     technical_data = fields.Json(
         copy=False,
+        groups="base.group_system",
         readonly=True,
         string="Technical Data",
     )
@@ -158,16 +173,21 @@ class L10nHuPlusLog(models.Model):
             # Initialize variables
             display_name = False
 
-            # Get values
+            # Resolve source without sudo so ACL / record rules still apply
             if record.source_model_name and record.source_record_id:
                 try:
-                    source_record = self.env[record.source_model_name].sudo().search([
-                        ('id', '=', record.source_record_id)
-                    ])
-                    if source_record:
-                        display_name = source_record.display_name
-                except:
-                    pass
+                    source_model = self.env[record.source_model_name]
+                except KeyError:
+                    source_model = None
+                if source_model is not None:
+                    try:
+                        source_record = source_model.search([("id", "=", record.source_record_id)], limit=1)
+                        if source_record:
+                            display_name = source_record.display_name
+                    except exceptions.AccessError:
+                        display_name = False
+                    except Exception:
+                        display_name = False
 
             # Set field
             record.source_display_name = display_name
@@ -175,6 +195,20 @@ class L10nHuPlusLog(models.Model):
     # Constraints and onchanges
 
     # CRUD methods (and display_name, name_search, ...) overrides
+    @api.model_create_multi
+    def create(self, vals_list):
+        if not self.env.context.get("l10n_hu_plus_skip_secret_scrub"):
+            for values in vals_list:
+                if values.get("technical_data"):
+                    values["technical_data"] = self._l10n_hu_plus_scrub_secrets_from_data(values["technical_data"])
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if vals.get("technical_data") and not self.env.context.get("l10n_hu_plus_skip_secret_scrub"):
+            vals = dict(vals)
+            vals["technical_data"] = self._l10n_hu_plus_scrub_secrets_from_data(vals["technical_data"])
+        return super().write(vals)
+
     def _compute_display_name(self):
         for record in self:
             record.display_name = "HU+LOG-" + str(record.id)
@@ -266,6 +300,83 @@ class L10nHuPlusLog(models.Model):
             raise exceptions.UserError(_("Technical data is empty!"))
 
     # Business methods
+    @api.model
+    def _l10n_hu_plus_redact_http_headers(self, headers):
+        """Return a copy of HTTP headers with secret values redacted.
+
+        :param dict | None headers: request headers that may contain secrets
+        :returns: headers safe to persist in technical_data
+        :rtype: dict
+        """
+        if not headers:
+            return {}
+        redacted = {}
+        for header_name, header_value in headers.items():
+            if str(header_name).lower() in _SECRET_HTTP_HEADER_KEYS:
+                redacted[header_name] = _REDACTED_SECRET
+            else:
+                redacted[header_name] = header_value
+        return redacted
+
+    @api.model
+    def _l10n_hu_plus_scrub_secrets_from_data(self, data):
+        """Return a deep copy of ``data`` with secret headers and keys redacted.
+
+        :param data: nested dict/list/scalar technical payload
+        :returns: scrubbed copy safe to store on log technical_data
+        """
+        if isinstance(data, dict):
+            scrubbed = {}
+            for key, value in data.items():
+                key_lower = str(key).lower()
+                if key_lower in ("request_headers", "headers"):
+                    scrubbed[key] = self._l10n_hu_plus_redact_http_headers(value if isinstance(value, dict) else {})
+                elif key_lower in _SECRET_JSON_KEYS:
+                    scrubbed[key] = _REDACTED_SECRET
+                else:
+                    scrubbed[key] = self._l10n_hu_plus_scrub_secrets_from_data(value)
+            return scrubbed
+        if isinstance(data, list):
+            return [self._l10n_hu_plus_scrub_secrets_from_data(item) for item in data]
+        return data
+
+    def _l10n_hu_plus_scrub_technical_data_secrets(self):
+        """Scrub secret values from ``technical_data`` on the current log records.
+
+        :returns: number of records updated
+        :rtype: int
+        """
+        updated = 0
+        for log in self:
+            technical_data = log.technical_data
+            if not technical_data:
+                continue
+            if isinstance(technical_data, str):
+                try:
+                    technical_data = json.loads(technical_data)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+            scrubbed = self._l10n_hu_plus_scrub_secrets_from_data(technical_data)
+            if scrubbed != technical_data:
+                log.sudo().write({"technical_data": scrubbed})
+                updated += 1
+        return updated
+
+    @api.model
+    def l10n_hu_plus_scrub_log_secrets(self, limit=0):
+        """Scrub secrets from existing HU+ log ``technical_data`` rows.
+
+        Call after upgrade (or from a migration) to clean historical API keys stored in request headers.
+        Does not rotate company API keys; use the company Reset / Create API registration actions for that.
+
+        :param int limit: max records to process (0 = all)
+        :returns: number of records updated
+        :rtype: int
+        """
+        domain = [("technical_data", "!=", False)]
+        logs = self.sudo().search(domain, limit=limit or None)
+        return logs._l10n_hu_plus_scrub_technical_data_secrets()
+
     @api.model
     def api_request_response(self, values):
         """ Make a request to API and process the response
@@ -359,11 +470,11 @@ class L10nHuPlusLog(models.Model):
         if len(error_list) == 0:
             # Make request
             if request_method == 'DELETE':
-                response = requests.delete(request_url, headers=request_headers, data=request_data)
+                response = requests.delete(request_url, headers=request_headers, data=request_data, timeout=_HTTP_TIMEOUT)
             elif request_method == 'GET':
-                response = requests.get(request_url, headers=request_headers, data=request_data)
+                response = requests.get(request_url, headers=request_headers, data=request_data, timeout=_HTTP_TIMEOUT)
             elif request_method == 'POST':
-                response = requests.post(request_url, headers=request_headers, data=request_data)
+                response = requests.post(request_url, headers=request_headers, data=request_data, timeout=_HTTP_TIMEOUT)
             else:
                 response = None
             # raise exceptions.UserError(str(response.json()))
@@ -404,12 +515,12 @@ class L10nHuPlusLog(models.Model):
             }
             debug_list.append("request sending skipped due to previous errors")
 
-        # technical_data
+        # technical_data (never persist secret headers / API keys)
         technical_data = {
             'processing_result': processing_result,
             'request_info': {
                 'request_data': request_data,
-                'request_headers': request_headers,
+                'request_headers': self._l10n_hu_plus_redact_http_headers(request_headers),
                 'request_path': request_url,
             },
             'response_info': {
@@ -419,7 +530,7 @@ class L10nHuPlusLog(models.Model):
             },
         }
         log.sudo().write({
-            'technical_data': technical_data,
+            'technical_data': self._l10n_hu_plus_scrub_secrets_from_data(technical_data),
         })
 
         # Update result

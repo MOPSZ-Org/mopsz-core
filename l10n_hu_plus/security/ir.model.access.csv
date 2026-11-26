@@ -1,14 +1,11 @@
 id,name,model_id/id,group_id/id,perm_read,perm_write,perm_create,perm_unlink
 l10n_hu_plus_object_manager_access,l10n.hu.plus.object.manager.access,model_l10n_hu_plus_object,l10n_hu_plus.manager_group,1,1,1,1
-l10n_hu_plus_object_portal_access,l10n.hu.plus.object.portal.access,model_l10n_hu_plus_object,base.group_portal,1,0,0,0
 l10n_hu_plus_object_read_access,l10n.hu.plus.object.read.access,model_l10n_hu_plus_object,base.group_user,1,0,0,0
 l10n_hu_plus_object_user_access,l10n.hu.plus.object.user.access,model_l10n_hu_plus_object,l10n_hu_plus.user_group,1,1,1,0
 l10n_hu_plus_log_manager_access,l10n.hu.plus.log.manager.access,model_l10n_hu_plus_log,l10n_hu_plus.manager_group,1,1,1,1
-l10n_hu_plus_log_portal_access,l10n_hu.plus.log.portal.access,model_l10n_hu_plus_log,base.group_portal,1,0,0,0
 l10n_hu_plus_log_read_access,l10n_hu.plus.log.read.access,model_l10n_hu_plus_log,base.group_user,1,0,0,0
 l10n_hu_plus_log_user_access,l10n_hu.plus.log.user.access,model_l10n_hu_plus_log,l10n_hu_plus.user_group,1,1,1,0
 l10n_hu_plus_tag_manager_access,l10n.hu.plus.tag.manager.access,model_l10n_hu_plus_tag,l10n_hu_plus.manager_group,1,1,1,1
-l10n_hu_plus_tag_portal_access,l10n.hu.plus.tag.portal.access,model_l10n_hu_plus_tag,base.group_portal,1,0,0,0
 l10n_hu_plus_tag_read_access,l10n.hu.plus.tag.read.access,model_l10n_hu_plus_tag,base.group_user,1,0,0,0
 l10n_hu_plus_tag_user_access,l10n.hu.plus.tag.user.access,model_l10n_hu_plus_tag,l10n_hu_plus.user_group,1,1,1,0
 l10n_hu_plus_wizard_user_access,l10n.hu.plus.wizard.user.access,model_l10n_hu_plus_wizard,l10n_hu_plus.user_group,1,1,1,1
