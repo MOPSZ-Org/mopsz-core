@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # 1 : imports of python lib
+from collections import defaultdict
 import base64
 import datetime
 import json
@@ -20,7 +21,7 @@ class L10nHuPlusAccountMove(models.Model):
     _inherit = 'account.move'
 
     # Default methods
-    
+
     # Field declarations
     ## ODOO
     invoice_pdf_report_id = fields.Many2one(
@@ -607,17 +608,17 @@ class L10nHuPlusAccountMove(models.Model):
         return super()._l10n_hu_get_currency_rate()
 
     def _l10n_hu_edi_get_invoice_values(self):
-        """ Super for original method in l10n_hu_edi app
+        """Super for original method in l10n_hu_edi app.
 
         NOTES:
         - super result is a dictionary containing invoice_values
         - we update the dictionary with some values
         - for xml rendering see file: data/template_invoice_xml.data
-
         """
         # Execute super
         result = super(L10nHuPlusAccountMove, self)._l10n_hu_edi_get_invoice_values()
-
+        # fix NAV invoiceSummary: aggregate split tax lines + rebuild HUF totals from NAV rate
+        result = self._l10n_hu_edi_fix_invoice_summary_values(result)
         # accounting_delivery_date
         if self.l10n_hu_delivery_period_start and self.l10n_hu_delivery_period_end:
             accounting_delivery_date = self.l10n_hu_delivery_period_end
@@ -627,39 +628,81 @@ class L10nHuPlusAccountMove(models.Model):
             accounting_delivery_date = self.date
         else:
             accounting_delivery_date = None
-
         # periodical_settlement
         if self.l10n_hu_delivery_period_start and self.l10n_hu_delivery_period_end:
             periodical_settlement = True
         else:
             periodical_settlement = False
-
         # Update result
         result.update({
-            'invoiceAccountingDeliveryDate': accounting_delivery_date,
-            'invoiceDeliveryPeriodEnd': self.l10n_hu_delivery_period_end,
-            'invoiceDeliveryPeriodStart': self.l10n_hu_delivery_period_start,
-            'periodicalSettlement': periodical_settlement
+            "invoiceAccountingDeliveryDate": accounting_delivery_date, "invoiceDeliveryPeriodEnd": self.l10n_hu_delivery_period_end,
+            "invoiceDeliveryPeriodStart": self.l10n_hu_delivery_period_start, "periodicalSettlement": periodical_settlement,
         })
-
         # Customer tax number
         ## NOTES: temporary workaround until Odoo S.A. fix, see https://github.com/hungarodo/odoohu-plus/issues/31
-        customer = result.get('customer', None)
-        if (customer and customer.is_company and customer.vat and customer.country_code != 'HU'
-                and self.fiscal_position_id and self.fiscal_position_id.l10n_hu_vat_status == 'domestic'):
+        customer = result.get("customer", None)
+        if (customer and customer.is_company and customer.vat and customer.country_code != "HU"
+                and self.fiscal_position_id and self.fiscal_position_id.l10n_hu_vat_status == "domestic"):
             result.update({
-                'customer_vat_data': {
-                    'tax_number': customer.l10n_hu_group_vat or customer.vat,
-                    'group_member_tax_number': customer.l10n_hu_group_vat and customer.vat,
+                "customer_vat_data": {
+                    "tax_number": customer.l10n_hu_group_vat or customer.vat,
+                    "group_member_tax_number": customer.l10n_hu_group_vat and customer.vat,
                 },
-                'customerVatStatus': 'DOMESTIC'
+                "customerVatStatus": "DOMESTIC",
             })
-
         # Return result
         return result
 
+    def _l10n_hu_edi_fix_invoice_summary_values(self, invoice_values: dict) -> dict:
+        """Aggregate split VAT tax lines and rebuild NAV invoice summary totals.
+
+        Factory ``l10n_hu_edi`` keeps only the last tax AML per tax when building ``tax_summary``.
+        Analytic distribution / rounding can create several tax lines for the same VAT rate; sum them.
+        Also rebuild HUF amounts from the NAV exchange rate to avoid INCORRECT_SUMMARY_* warnings (#76).
+
+        :param dict invoice_values: values returned by ``_l10n_hu_edi_get_invoice_values``
+        :returns: updated invoice values including tax_summary and invoice totals
+        :rtype: dict
+        """
+        self.ensure_one()
+        currency_huf = self.env.ref("base.HUF")
+        currency_rate = self._l10n_hu_get_currency_rate()
+        is_company_huf = self.company_id.currency_id == currency_huf
+        # aggregate VAT amounts by tax (analytic / rounding can split one VAT into several tax lines)
+        aggregated_tax_amounts = defaultdict(lambda: {"vatRateVatAmount": 0.0, "vatRateVatAmountHUF": 0.0})
+        for aml in self.line_ids.filtered(lambda line: line.tax_line_id.l10n_hu_tax_type):
+            vat_tax = aml.tax_line_id
+            aggregated_tax_amounts[vat_tax]["vatRateVatAmount"] += -aml.amount_currency
+            if is_company_huf:
+                aggregated_tax_amounts[vat_tax]["vatRateVatAmountHUF"] += -aml.balance
+            else:
+                aggregated_tax_amounts[vat_tax]["vatRateVatAmountHUF"] += currency_huf.round(-aml.amount_currency * currency_rate)
+        for vat_tax in aggregated_tax_amounts:
+            aggregated_tax_amounts[vat_tax]["vatRateVatAmount"] = self.currency_id.round(aggregated_tax_amounts[vat_tax]["vatRateVatAmount"])
+            aggregated_tax_amounts[vat_tax]["vatRateVatAmountHUF"] = currency_huf.round(aggregated_tax_amounts[vat_tax]["vatRateVatAmountHUF"])
+        # replace super VAT amounts with aggregated values before summary recomputation
+        for tax_values in invoice_values["tax_summary"]:
+            vat_tax = tax_values["vat_tax"]
+            if vat_tax in aggregated_tax_amounts:
+                tax_values["vatRateVatAmount"] = aggregated_tax_amounts[vat_tax]["vatRateVatAmount"]
+        # recalculate vatRateVatAmountHUF from VAT * NAV rate
+        for tax_values in invoice_values["tax_summary"]:
+            tax_values["vatRateVatAmountHUF"] = currency_huf.round(tax_values["vatRateVatAmount"] * currency_rate)
+        # derive all summary totals from per-VAT-rate values
+        tax_summary = invoice_values["tax_summary"]
+        total_net = self.currency_id.round(sum(tax_values["vatRateNetAmount"] for tax_values in tax_summary))
+        total_net_huf = currency_huf.round(sum(tax_values["vatRateNetAmountHUF"] for tax_values in tax_summary))
+        total_vat = self.currency_id.round(sum(tax_values["vatRateVatAmount"] for tax_values in tax_summary))
+        total_vat_huf = currency_huf.round(sum(tax_values["vatRateVatAmountHUF"] for tax_values in tax_summary))
+        invoice_values.update({
+            "invoiceNetAmount": total_net, "invoiceNetAmountHUF": total_net_huf, "invoiceVatAmount": total_vat,
+            "invoiceVatAmountHUF": total_vat_huf, "invoiceGrossAmount": self.currency_id.round(total_net + total_vat),
+            "invoiceGrossAmountHUF": currency_huf.round(total_net_huf + total_vat_huf),
+        })
+        return invoice_values
+
     def _l10n_hu_edi_get_valid_actions(self):
-        """ Super for original method in l10n_hu_edi app
+        """Super for original method in l10n_hu_edi app.
 
         NOTES:
         - super result is a list containing possible HU EDI actions
@@ -667,10 +710,9 @@ class L10nHuPlusAccountMove(models.Model):
         """
         # Execute super
         result = super(L10nHuPlusAccountMove, self)._l10n_hu_edi_get_valid_actions()
-
         # No action when EDI sending is disabled on the journal (eg: externally issued invoices, OSS)
-        if (self.company_id.account_fiscal_country_id.code == 'HU' and self.journal_id and self.state == 'posted'
-                and self.is_sale_document() and self.journal_id.l10n_hu_edi_sending == 'disabled'):
+        if (self.company_id.account_fiscal_country_id.code == "HU" and self.journal_id and self.state == "posted"
+                and self.is_sale_document() and self.journal_id.l10n_hu_edi_sending == "disabled"):
             result = []
         return result
 
@@ -843,7 +885,7 @@ class L10nHuPlusAccountMove(models.Model):
         - some fields are computed by calling other methods
         - this method also prepares write operation compatible values for special hungarian fields
         - there should be no CRUD operation here, keep it in mind when using super()
-        
+
         :param values: dictionary
 
         :return: dictionary
@@ -1767,7 +1809,7 @@ class L10nHuPlusAccountMove(models.Model):
             }
             error_list.append(l10n_hu_edi_error)
         """
-        
+
         # HU+0: collect data using dedicated methods
         delivery_data = self.l10n_hu_plus_get_delivery_data({})
         document_data = self.l10n_hu_plus_get_document_data({})
