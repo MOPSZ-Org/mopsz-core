@@ -7,3 +7,4 @@ from . import test_plus_http_ui
 from . import test_plus_partner_attachment
 from . import test_account_move_cron
 from . import test_plus_object_cron
+from . import test_nav_invoice_summary
